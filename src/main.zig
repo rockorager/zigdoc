@@ -45,7 +45,17 @@ pub fn main() !void {
     Walk.init(arena.allocator());
     Walk.Decl.init(arena.allocator());
 
-    const std_dir_path = try getStdDir(&arena);
+    const std_dir_path = getStdDir(&arena) catch |err| {
+        if (err == error.FileNotFound) {
+            try printMessage(
+                \\Error: 'zig' command not found.
+                \\Please ensure Zig is installed and available in your PATH.
+                \\
+            );
+            std.process.exit(1);
+        }
+        return err;
+    };
 
     try walkStdLib(&arena, std_dir_path);
 
@@ -61,10 +71,15 @@ pub fn main() !void {
     try printDocs(arena.allocator(), symbol.?, std_dir_path);
 }
 
-fn printUsage() !void {
-    var stdout_buf: [1024]u8 = undefined;
+fn printMessage(comptime message: []const u8) !void {
+    var stdout_buf: [message.len]u8 = undefined;
     var stdout_writer = std.fs.File.stdout().writer(&stdout_buf);
-    try stdout_writer.interface.writeAll(
+    try stdout_writer.interface.writeAll(message);
+    try stdout_writer.interface.flush();
+}
+
+fn printUsage() !void {
+    try printMessage(
         \\Usage: zigdoc [options] <symbol>
         \\
         \\Show documentation for Zig standard library symbols and imported modules.
@@ -84,7 +99,6 @@ fn printUsage() !void {
         \\  --dump-imports    Dump module imports from build.zig as JSON
         \\
     );
-    try stdout_writer.interface.flush();
 }
 
 fn dumpImports(arena: *std.heap.ArenaAllocator) !void {
