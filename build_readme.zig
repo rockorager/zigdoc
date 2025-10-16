@@ -16,7 +16,7 @@ pub fn main() !void {
     const help_file = args[1];
     const output_file = args[2];
 
-    const help_content = try std.fs.cwd().readFileAlloc(allocator, help_file, 1024 * 1024);
+    const help_content = try std.fs.cwd().readFileAlloc(help_file, allocator, std.Io.Limit.limited(1024 * 1024));
     defer allocator.free(help_content);
 
     const readme = try std.fmt.allocPrint(allocator,
