@@ -1,21 +1,5 @@
 # AGENTS.md
 
-## Build & Test Commands
-
-- **Build**: `zig build`
-- **Run**: `zig build run -- [args]` (e.g., `zig build run -- std.ArrayList`)
-- **Test**: `zig build test`
-- **Install**: `zig build install -Doptimize=ReleaseFast --prefix $HOME/.local`
-
-## Architecture
-
-This is a Zig CLI tool that parses and displays documentation for Zig standard library symbols and imported modules from build.zig. The codebase consists of:
-
-- **src/main.zig**: Entry point, argument parsing, orchestrates documentation lookup
-- **src/Walk.zig**: AST walking logic, manages files/decls/modules maps, categorizes symbols
-- **src/Decl.zig**: Declaration representation with metadata (name, visibility, doc comments)
-- **src/build_runner_0.14.zig** & **src/build_runner_0.15.zig**: Build runner templates for different Zig versions
-
 ## Zig Development
 
 Always use `zigdoc` to discover APIs for the Zig standard library AND any third-party dependencies (modules). Assume training data is out of date.
