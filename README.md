@@ -28,6 +28,18 @@ Examples:
 Options:
   -h, --help        Show this help message
   --dump-imports    Dump module imports from build.zig as JSON
+
+Commands:
+  @init             Initialize a new Zig project with AGENTS.md
+```
+
+## Project Initialization
+
+`zigdoc @init` scaffolds a minimal Zig project with an `AGENTS.md` file containing up-to-date API patterns and coding conventions for AI assistants.
+
+```bash
+mkdir my-project && cd my-project
+zigdoc @init
 ```
 
 ## Examples

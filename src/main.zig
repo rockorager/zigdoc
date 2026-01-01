@@ -6,6 +6,11 @@ const log = std.log.scoped(.zigdoc);
 const build_runner_0_14 = @embedFile("build_runner_0.14.zig");
 const build_runner_0_15 = @embedFile("build_runner_0.15.zig");
 
+const template_build_zig = @embedFile("templates/build.zig.template");
+const template_main_zig = @embedFile("templates/main.zig.template");
+const template_build_zig_zon = @embedFile("templates/build.zig.zon.template");
+const template_agents_md = @embedFile("templates/AGENTS.md.template");
+
 pub fn main() !void {
     var debug_allocator: std.heap.DebugAllocator(.{}) = .init;
     const gpa, const is_debug = gpa: {
@@ -39,6 +44,11 @@ pub fn main() !void {
 
     if (std.mem.eql(u8, symbol.?, "--dump-imports")) {
         try dumpImports(&arena);
+        return;
+    }
+
+    if (std.mem.eql(u8, symbol.?, "@init")) {
+        try initProject(arena.allocator());
         return;
     }
 
@@ -84,8 +94,69 @@ fn printUsage() !void {
         \\  -h, --help        Show this help message
         \\  --dump-imports    Dump module imports from build.zig as JSON
         \\
+        \\Commands:
+        \\  @init             Initialize a new Zig project with AGENTS.md
+        \\
     );
     try stdout_writer.interface.flush();
+}
+
+fn initProject(allocator: std.mem.Allocator) !void {
+    const cwd = std.fs.cwd();
+
+    // Check if project already exists
+    if (cwd.access("build.zig", .{})) |_| {
+        std.debug.print("Error: build.zig already exists\n", .{});
+        return error.ProjectExists;
+    } else |_| {}
+
+    // Get project name from current directory
+    var path_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const cwd_path = try cwd.realpath(".", &path_buf);
+    const name = std.fs.path.basename(cwd_path);
+
+    // Create src directory
+    try cwd.makeDir("src");
+
+    // Write files with substitutions
+    try cwd.writeFile(.{ .sub_path = "build.zig", .data = try substitute(allocator, template_build_zig, name) });
+    try cwd.writeFile(.{ .sub_path = "build.zig.zon", .data = try substitute(allocator, template_build_zig_zon, name) });
+    try cwd.writeFile(.{ .sub_path = "src/main.zig", .data = template_main_zig });
+    try cwd.writeFile(.{ .sub_path = "AGENTS.md", .data = template_agents_md });
+
+    // Run zig build to get suggested fingerprint from error message
+    const result = std.process.Child.run(.{
+        .allocator = allocator,
+        .argv = &.{ "zig", "build" },
+    }) catch {
+        std.debug.print("Initialized Zig project '{s}' (run 'zig build' to generate fingerprint)\n", .{name});
+        return;
+    };
+
+    // Parse fingerprint from error: "suggested value: 0x..."
+    if (std.mem.indexOf(u8, result.stderr, "suggested value: ")) |start| {
+        const fp_start = start + "suggested value: ".len;
+        const fp_end = std.mem.indexOfPos(u8, result.stderr, fp_start, "\n") orelse result.stderr.len;
+        const fingerprint = result.stderr[fp_start..fp_end];
+
+        // Read current build.zig.zon and insert fingerprint
+        const zon_content = try cwd.readFileAlloc(allocator, "build.zig.zon", 64 * 1024);
+        const new_zon = try std.mem.replaceOwned(
+            u8,
+            allocator,
+            zon_content,
+            ".version = \"0.0.0\",",
+            try std.fmt.allocPrint(allocator, ".version = \"0.0.0\",\n    .fingerprint = {s},", .{fingerprint}),
+        );
+        try cwd.writeFile(.{ .sub_path = "build.zig.zon", .data = new_zon });
+    }
+
+    std.debug.print("Initialized Zig project '{s}'\n", .{name});
+}
+
+fn substitute(allocator: std.mem.Allocator, template: []const u8, name: []const u8) ![]const u8 {
+    const sanitized = try std.mem.replaceOwned(u8, allocator, name, "-", "_");
+    return std.mem.replaceOwned(u8, allocator, template, "{{name}}", sanitized);
 }
 
 fn dumpImports(arena: *std.heap.ArenaAllocator) !void {
