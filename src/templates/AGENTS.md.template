@@ -27,7 +27,7 @@ try list.append(allocator, 42);
 ```zig
 var buf: [4096]u8 = undefined;
 const writer = std.fs.File.stdout().writer(&buf);
-defer writer.flush();
+defer writer.flush() catch {};
 try writer.print("hello {s}\n", .{"world"});
 ```
 

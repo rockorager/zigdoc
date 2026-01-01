@@ -10,6 +10,7 @@ const template_build_zig = @embedFile("templates/build.zig.template");
 const template_main_zig = @embedFile("templates/main.zig.template");
 const template_build_zig_zon = @embedFile("templates/build.zig.zon.template");
 const template_agents_md = @embedFile("templates/AGENTS.md.template");
+const template_gitignore = @embedFile("templates/.gitignore.template");
 
 pub fn main() !void {
     var debug_allocator: std.heap.DebugAllocator(.{}) = .init;
@@ -123,6 +124,7 @@ fn initProject(allocator: std.mem.Allocator) !void {
     try cwd.writeFile(.{ .sub_path = "build.zig.zon", .data = try substitute(allocator, template_build_zig_zon, name) });
     try cwd.writeFile(.{ .sub_path = "src/main.zig", .data = template_main_zig });
     try cwd.writeFile(.{ .sub_path = "AGENTS.md", .data = template_agents_md });
+    try cwd.writeFile(.{ .sub_path = ".gitignore", .data = template_gitignore });
 
     // Run zig build to get suggested fingerprint from error message
     const result = std.process.Child.run(.{
