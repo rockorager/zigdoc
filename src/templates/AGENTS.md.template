@@ -23,6 +23,20 @@ defer list.deinit(allocator);
 try list.append(allocator, 42);
 ```
 
+**HashMap/StringHashMap (unmanaged):**
+```zig
+var map: std.StringHashMapUnmanaged(u32) = .empty;
+defer map.deinit(allocator);
+try map.put(allocator, "key", 42);
+```
+
+**HashMap/StringHashMap (managed):**
+```zig
+var map: std.StringHashMap(u32) = std.StringHashMap(u32).init(allocator);
+defer map.deinit();
+try map.put("key", 42);
+```
+
 **stdout/stderr Writer:**
 ```zig
 var buf: [4096]u8 = undefined;
