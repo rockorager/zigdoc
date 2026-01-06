@@ -5,6 +5,7 @@ const log = std.log.scoped(.zigdoc);
 
 const build_runner_0_14 = @embedFile("build_runner_0.14.zig");
 const build_runner_0_15 = @embedFile("build_runner_0.15.zig");
+const build_runner_0_16 = @embedFile("build_runner_0.16.zig");
 
 const template_build_zig = @embedFile("templates/build.zig.template");
 const template_main_zig = @embedFile("templates/main.zig.template");
@@ -218,6 +219,7 @@ fn setupBuildRunner(arena: *std.heap.ArenaAllocator) !void {
     const runner_src = switch (version.minor) {
         14 => build_runner_0_14,
         15 => build_runner_0_15,
+        16 => build_runner_0_16,
         else => return error.UnsupportedZigVersion,
     };
 
@@ -282,9 +284,9 @@ fn parseBuildOutput(allocator: std.mem.Allocator, output: []const u8) !void {
 
         // Read and add the module file
         const file_content = std.fs.cwd().readFileAlloc(
-            allocator,
             root_path,
-            10 * 1024 * 1024,
+            allocator,
+            std.Io.Limit.limited(10 * 1024 * 1024),
         ) catch |err| {
             std.debug.print("Failed to read module {s}: {}\n", .{ module_name, err });
             continue;
@@ -305,9 +307,9 @@ fn parseBuildOutput(allocator: std.mem.Allocator, output: []const u8) !void {
 
                 // Read and add the imported file
                 const import_content = std.fs.cwd().readFileAlloc(
-                    allocator,
                     import_path,
-                    10 * 1024 * 1024,
+                    allocator,
+                    std.Io.Limit.limited(10 * 1024 * 1024),
                 ) catch |err| {
                     std.debug.print("Failed to read import {s}: {}\n", .{ import_name, err });
                     continue;
@@ -345,7 +347,7 @@ fn getStdDir(arena: *std.heap.ArenaAllocator) ![]const u8 {
         );
         return parsed.value.std_dir;
     } else {
-        const parsed = try std.zon.parse.fromSlice(
+        const parsed = try std.zon.parse.fromSliceAlloc(
             ZigEnv,
             arena.allocator(),
             stdout,
@@ -370,15 +372,20 @@ fn walkStdLib(arena: *std.heap.ArenaAllocator, std_dir_path: []const u8) !void {
         if (std.mem.endsWith(u8, entry.basename, "test.zig")) continue;
 
         const file_content = try entry.dir.readFileAllocOptions(
-            allocator,
             entry.basename,
-            10 * 1024 * 1024,
-            null,
+            allocator,
+            std.Io.Limit.limited(10 * 1024 * 1024),
             @enumFromInt(0),
             0,
         );
 
-        const file_name = try std.fmt.allocPrint(allocator, "std/{s}", .{entry.path});
+        // Normalize path separators to forward slashes for consistent handling
+        const normalized_path = try allocator.dupe(u8, entry.path);
+        for (normalized_path) |*ch| {
+            if (ch.* == '\\') ch.* = '/';
+        }
+        const file_name = try std.fmt.allocPrint(allocator, "std/{s}", .{normalized_path});
+        allocator.free(normalized_path);
 
         _ = try Walk.add_file(file_name, file_content);
     }
