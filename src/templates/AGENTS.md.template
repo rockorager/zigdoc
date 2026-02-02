@@ -57,6 +57,28 @@ b.addExecutable(.{
 });
 ```
 
+**JSON writing:**
+```zig
+// Use std.json.Stringify with a buffered writer
+var buf: [4096]u8 = undefined;
+var writer = std.fs.File.stdout().writer(&buf);
+defer writer.interface.flush() catch {};
+
+var jw: std.json.Stringify = .{
+    .writer = &writer.interface,
+    .options = .{ .whitespace = .indent_2 },
+};
+try jw.write(my_struct);  // Serialize any struct/value directly
+```
+
+**Allocating writer (dynamic buffer):**
+```zig
+var writer: std.Io.Writer.Allocating = .init(allocator);
+defer writer.deinit();
+try writer.writer.print("hello {s}", .{"world"});
+const output = writer.toOwnedSlice();  // Get result
+```
+
 ## Zig Code Style
 
 **Naming:**
