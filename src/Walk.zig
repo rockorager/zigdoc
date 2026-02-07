@@ -353,7 +353,7 @@ pub const File = struct {
                 if (files.getIndex(resolved_path)) |imported_file_index| {
                     return Category.makeAlias(File.Index.findRootDecl(@enumFromInt(imported_file_index)), node);
                 } else {
-                    const import_content = std.fs.cwd().readFileAlloc(gpa, resolved_path, 10 * 1024 * 1024) catch |err| {
+                    const import_content = std.fs.cwd().readFileAlloc(resolved_path, gpa, std.Io.Limit.limited(10 * 1024 * 1024)) catch |err| {
                         log.warn("import target '{s}' could not be read: {}", .{ resolved_path, err });
                         return .{ .global_const = node };
                     };
