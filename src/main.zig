@@ -120,8 +120,14 @@ fn initProject(allocator: std.mem.Allocator) !void {
     try cwd.makeDir("src");
 
     // Write files with substitutions
-    try cwd.writeFile(.{ .sub_path = "build.zig", .data = try substitute(allocator, template_build_zig, name) });
-    try cwd.writeFile(.{ .sub_path = "build.zig.zon", .data = try substitute(allocator, template_build_zig_zon, name) });
+    try cwd.writeFile(.{
+        .sub_path = "build.zig",
+        .data = try substitute(allocator, template_build_zig, name),
+    });
+    try cwd.writeFile(.{
+        .sub_path = "build.zig.zon",
+        .data = try substitute(allocator, template_build_zig_zon, name),
+    });
     try cwd.writeFile(.{ .sub_path = "src/main.zig", .data = template_main_zig });
     try cwd.writeFile(.{ .sub_path = "AGENTS.md", .data = template_agents_md });
     try cwd.writeFile(.{ .sub_path = ".gitignore", .data = template_gitignore });
@@ -209,7 +215,7 @@ fn getZigVersion(arena: *std.heap.ArenaAllocator) !std.SemanticVersion {
     }
 
     const version_str = std.mem.trim(u8, version_result.stdout, &std.ascii.whitespace);
-    return try std.SemanticVersion.parse(version_str);
+    return std.SemanticVersion.parse(version_str);
 }
 
 fn setupBuildRunner(arena: *std.heap.ArenaAllocator) !void {
@@ -290,7 +296,7 @@ fn parseBuildOutput(allocator: std.mem.Allocator, output: []const u8) !void {
             continue;
         };
 
-        const file_index = try Walk.add_file(root_path, file_content);
+        const file_index = try Walk.addFile(root_path, file_content);
         try Walk.modules.put(allocator, module_name, file_index);
 
         // Handle imports if present
@@ -313,7 +319,7 @@ fn parseBuildOutput(allocator: std.mem.Allocator, output: []const u8) !void {
                     continue;
                 };
 
-                const import_file_index = try Walk.add_file(import_path, import_content);
+                const import_file_index = try Walk.addFile(import_path, import_content);
                 try Walk.modules.put(allocator, import_name, import_file_index);
             }
         }
@@ -380,7 +386,7 @@ fn walkStdLib(arena: *std.heap.ArenaAllocator, std_dir_path: []const u8) !void {
 
         const file_name = try std.fmt.allocPrint(allocator, "std/{s}", .{entry.path});
 
-        _ = try Walk.add_file(file_name, file_content);
+        _ = try Walk.addFile(file_name, file_content);
     }
 }
 
@@ -391,10 +397,10 @@ fn resolveHierarchical(allocator: std.mem.Allocator, symbol: []const u8) !?*Walk
     // Find the root declaration
     var current_decl: ?*Walk.Decl = null;
     for (Walk.decls.items) |*decl| {
-        const info = decl.extra_info();
+        const info = decl.extraInfo();
         if (!info.is_pub) continue;
 
-        var fqn_buf: std.ArrayListUnmanaged(u8) = .empty;
+        var fqn_buf: std.ArrayList(u8) = .empty;
         defer fqn_buf.deinit(allocator);
         try decl.fqn(&fqn_buf);
 
@@ -426,7 +432,7 @@ fn resolveHierarchical(allocator: std.mem.Allocator, symbol: []const u8) !?*Walk
         var found = false;
         for (Walk.decls.items) |*candidate| {
             if (candidate.parent != .none and candidate.parent.get() == search_decl) {
-                const member_info = candidate.extra_info();
+                const member_info = candidate.extraInfo();
                 if (!member_info.is_pub) continue;
                 if (std.mem.eql(u8, member_info.name, part)) {
                     current_decl = candidate;
@@ -442,10 +448,16 @@ fn resolveHierarchical(allocator: std.mem.Allocator, symbol: []const u8) !?*Walk
     return current_decl;
 }
 
-fn printDeclInfo(allocator: std.mem.Allocator, stdout: anytype, decl: *Walk.Decl, symbol: []const u8, std_dir_path: []const u8) !void {
+fn printDeclInfo(
+    allocator: std.mem.Allocator,
+    stdout: anytype,
+    decl: *Walk.Decl,
+    symbol: []const u8,
+    std_dir_path: []const u8,
+) !void {
     const file_path = decl.file.path();
-    const ast = decl.file.get_ast();
-    const info = decl.extra_info();
+    const ast = decl.file.getAst();
+    const info = decl.extraInfo();
 
     // Print header
     try stdout.print("Symbol: {s}\n", .{symbol});
@@ -468,7 +480,7 @@ fn printDeclInfo(allocator: std.mem.Allocator, stdout: anytype, decl: *Walk.Decl
         target_decl = aliasee_index.get();
         category = target_decl.categorize();
 
-        var aliasee_fqn: std.ArrayListUnmanaged(u8) = .empty;
+        var aliasee_fqn: std.ArrayList(u8) = .empty;
         defer aliasee_fqn.deinit(allocator);
         try target_decl.fqn(&aliasee_fqn);
 
@@ -477,7 +489,7 @@ fn printDeclInfo(allocator: std.mem.Allocator, stdout: anytype, decl: *Walk.Decl
         defer allocator.free(aliasee_full_path);
 
         // Get line number for alias target
-        const target_ast = target_decl.file.get_ast();
+        const target_ast = target_decl.file.getAst();
         const target_token_starts = target_ast.tokens.items(.start);
         const target_main_token = target_ast.nodeMainToken(target_decl.ast_node);
         const target_byte_offset = target_token_starts[target_main_token];
@@ -489,13 +501,13 @@ fn printDeclInfo(allocator: std.mem.Allocator, stdout: anytype, decl: *Walk.Decl
 
     // Print category and signature
     try stdout.print("Category: {s}\n", .{@tagName(category)});
-    const target_ast = target_decl.file.get_ast();
+    const target_ast = target_decl.file.getAst();
     const target_node = target_decl.ast_node;
     try printSignature(stdout, target_ast, target_decl, category);
 
     // Print documentation
     // For file roots, always try to show container doc comments from the target
-    const target_info = target_decl.extra_info();
+    const target_info = target_decl.extraInfo();
     const has_docs = if (target_ast.nodeTag(target_node) == .root)
         target_info.first_doc_comment.unwrap() != null
     else
@@ -547,13 +559,13 @@ fn printDocs(allocator: std.mem.Allocator, symbol: []const u8, std_dir_path: []c
         const file_path = decl.file.path();
         if (file_path.len == 0) continue;
 
-        const ast = decl.file.get_ast();
+        const ast = decl.file.getAst();
         if (ast.source.len == 0) continue;
 
-        const info = decl.extra_info();
+        const info = decl.extraInfo();
         if (!info.is_pub) continue;
 
-        var fqn_buf: std.ArrayListUnmanaged(u8) = .empty;
+        var fqn_buf: std.ArrayList(u8) = .empty;
         defer fqn_buf.deinit(allocator);
         try decl.fqn(&fqn_buf);
 
@@ -579,7 +591,7 @@ fn printDocs(allocator: std.mem.Allocator, symbol: []const u8, std_dir_path: []c
         // Check if the module exists
         const module_exists = blk: {
             for (Walk.decls.items) |*decl| {
-                var fqn_buf: std.ArrayListUnmanaged(u8) = .empty;
+                var fqn_buf: std.ArrayList(u8) = .empty;
                 defer fqn_buf.deinit(allocator);
                 try decl.fqn(&fqn_buf);
                 if (std.mem.eql(u8, fqn_buf.items, first_part)) break :blk true;
@@ -614,23 +626,23 @@ fn printDocs(allocator: std.mem.Allocator, symbol: []const u8, std_dir_path: []c
 fn printMembers(allocator: std.mem.Allocator, writer: anytype, decl: *const Walk.Decl, category: Walk.Category) !bool {
     switch (category) {
         .type_function, .namespace, .container => {
-            var functions: std.ArrayListUnmanaged([]const u8) = .empty;
+            var functions: std.ArrayList([]const u8) = .empty;
             defer functions.deinit(allocator);
-            var type_functions: std.ArrayListUnmanaged([]const u8) = .empty;
+            var type_functions: std.ArrayList([]const u8) = .empty;
             defer type_functions.deinit(allocator);
-            var constants: std.ArrayListUnmanaged([]const u8) = .empty;
+            var constants: std.ArrayList([]const u8) = .empty;
             defer constants.deinit(allocator);
-            var types: std.ArrayListUnmanaged([]const u8) = .empty;
+            var types: std.ArrayList([]const u8) = .empty;
             defer types.deinit(allocator);
             const FieldInfo = struct {
                 name: []const u8,
                 type_str: []const u8,
                 doc_comment: ?std.zig.Ast.TokenIndex,
             };
-            var fields: std.ArrayListUnmanaged(FieldInfo) = .empty;
+            var fields: std.ArrayList(FieldInfo) = .empty;
             defer fields.deinit(allocator);
 
-            const ast = decl.file.get_ast();
+            const ast = decl.file.getAst();
 
             if (category == .container) {
                 const node = category.container;
@@ -651,7 +663,11 @@ fn printMembers(allocator: std.mem.Allocator, writer: anytype, decl: *const Walk
                                         token_starts[end_token + 1]
                                     else
                                         ast.source.len;
-                                    break :blk std.mem.trim(u8, ast.source[start_offset..end_offset], &std.ascii.whitespace);
+                                    break :blk std.mem.trim(
+                                        u8,
+                                        ast.source[start_offset..end_offset],
+                                        &std.ascii.whitespace,
+                                    );
                                 } else "";
 
                                 const first_doc = Walk.Decl.findFirstDocComment(ast, field.firstToken());
@@ -700,7 +716,7 @@ fn printMembers(allocator: std.mem.Allocator, writer: anytype, decl: *const Walk
                     continue; // No parent
                 }
 
-                const member_info = candidate.extra_info();
+                const member_info = candidate.extraInfo();
                 if (!member_info.is_pub) continue;
                 if (member_info.name.len == 0) continue;
 
@@ -891,7 +907,9 @@ fn printSignature(writer: anytype, ast: *const std.zig.Ast, _: *const Walk.Decl,
                         .colon => true, // Space after colon
                         .keyword_pub, .keyword_fn, .keyword_const, .keyword_var, .keyword_comptime => true,
                         .asterisk, .l_bracket, .question_mark, .period => false, // No space after *, [, ?, .
-                        .r_bracket => tag != .identifier and tag != .keyword_const and tag != .keyword_var, // Space after ] except before type name
+                        .r_bracket => tag != .identifier and
+                            tag != .keyword_const and
+                            tag != .keyword_var, // Space after ] except before type name
                         else => switch (tag) {
                             .l_paren, .r_paren, .r_bracket, .comma, .semicolon => false,
                             .colon, .period => false, // No space before : or .

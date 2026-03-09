@@ -1,6 +1,12 @@
 .{
     .name = .{{name}},
     .version = "0.0.0",
+    .dependencies = .{
+        .ziglint = .{
+            .url = "https://github.com/rockorager/ziglint/archive/refs/tags/v0.5.2.tar.gz",
+            .hash = "ziglint-0.5.2-t0bwL2FwBQC5i-ifhKKv2ls5jGXHShJpuNhFVhiU-Tt-",
+        },
+    },
     .paths = .{
         "build.zig",
         "build.zig.zon",

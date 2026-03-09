@@ -9,11 +9,9 @@ pub const std_options: std.Options = .{
 };
 
 pub fn main() !void {
-    var gpa_instance = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa_instance.deinit();
-    const gpa = gpa_instance.allocator();
+    const allocator = std.heap.page_allocator;
 
-    var single_threaded_arena = std.heap.ArenaAllocator.init(gpa);
+    var single_threaded_arena = std.heap.ArenaAllocator.init(allocator);
     defer single_threaded_arena.deinit();
 
     var thread_safe_arena: std.heap.ThreadSafeAllocator = .{
@@ -96,9 +94,7 @@ pub fn main() !void {
     // Instead of executing it, let's dump information about it
 
     // Use a separate allocator for our module collection to avoid interfering with build graph
-    var module_gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = module_gpa.deinit();
-    const our_allocator = module_gpa.allocator();
+    const our_allocator = std.heap.page_allocator;
 
     const stdout = std.io.getStdOut().writer();
 

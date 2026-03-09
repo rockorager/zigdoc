@@ -35,7 +35,8 @@ Commands:
 
 ## Project Initialization
 
-`zigdoc @init` scaffolds a minimal Zig project with an `AGENTS.md` file containing up-to-date API patterns and coding conventions for AI assistants.
+`zigdoc @init` scaffolds a minimal Zig project with `AGENTS.md`
+plus `build.zig` and `build.zig.zon` configured for `ziglint`.
 
 ```bash
 mkdir my-project && cd my-project

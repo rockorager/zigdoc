@@ -3,10 +3,16 @@
     .version = "0.0.0",
     .fingerprint = 0x50a871f441c1a7ed,
     .minimum_zig_version = "0.15.1",
-    .dependencies = .{},
+    .dependencies = .{
+        .ziglint = .{
+            .url = "https://github.com/rockorager/ziglint/archive/refs/tags/v0.5.2.tar.gz",
+            .hash = "ziglint-0.5.2-t0bwL2FwBQC5i-ifhKKv2ls5jGXHShJpuNhFVhiU-Tt-",
+        },
+    },
     .paths = .{
         "build.zig",
         "build.zig.zon",
+        "build_readme.zig",
         "src",
     },
 }

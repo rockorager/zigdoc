@@ -1,3 +1,3 @@
-const std = @import("std");
+//! Application entry point.
 
 pub fn main() void {}

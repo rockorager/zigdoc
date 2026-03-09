@@ -1,9 +1,7 @@
 const std = @import("std");
 
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
+    const allocator = std.heap.page_allocator;
 
     const args = try std.process.argsAlloc(allocator);
     defer std.process.argsFree(allocator, args);
@@ -37,7 +35,8 @@ pub fn main() !void {
         \\
         \\## Project Initialization
         \\
-        \\`zigdoc @init` scaffolds a minimal Zig project with an `AGENTS.md` file containing up-to-date API patterns and coding conventions for AI assistants.
+        \\`zigdoc @init` scaffolds a minimal Zig project with `AGENTS.md`
+        \\plus `build.zig` and `build.zig.zon` configured for `ziglint`.
         \\
         \\```bash
         \\mkdir my-project && cd my-project

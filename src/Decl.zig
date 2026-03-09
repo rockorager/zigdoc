@@ -9,7 +9,6 @@ pub fn init(allocator: std.mem.Allocator) void {
 }
 const assert = std.debug.assert;
 const log = std.log;
-const Oom = error{OutOfMemory};
 
 ast_node: Ast.Node.Index,
 file: Walk.File.Index,
@@ -33,12 +32,12 @@ pub const Index = enum(u32) {
     }
 };
 
-pub fn is_pub(d: *const Decl) bool {
-    return d.extra_info().is_pub;
+pub fn isPub(d: *const Decl) bool {
+    return d.extraInfo().is_pub;
 }
 
-pub fn extra_info(d: *const Decl) ExtraInfo {
-    const ast = d.file.get_ast();
+pub fn extraInfo(d: *const Decl) ExtraInfo {
+    const ast = d.file.getAst();
     switch (ast.nodeTag(d.ast_node)) {
         .root => return .{
             .name = "",
@@ -90,8 +89,8 @@ pub fn extra_info(d: *const Decl) ExtraInfo {
     }
 }
 
-pub fn value_node(d: *const Decl) ?Ast.Node.Index {
-    const ast = d.file.get_ast();
+pub fn valueNode(d: *const Decl) ?Ast.Node.Index {
+    const ast = d.file.getAst();
     return switch (ast.nodeTag(d.ast_node)) {
         .fn_proto,
         .fn_proto_multi,
@@ -118,22 +117,22 @@ pub fn value_node(d: *const Decl) ?Ast.Node.Index {
 }
 
 pub fn categorize(decl: *const Decl) Walk.Category {
-    return decl.file.categorize_decl(decl.ast_node);
+    return decl.file.categorizeDecl(decl.ast_node);
 }
 
 /// Looks up a direct child of `decl` by name.
-pub fn get_child(decl: *const Decl, name: []const u8) ?Decl.Index {
+pub fn getChild(decl: *const Decl, name: []const u8) ?Decl.Index {
     switch (decl.categorize()) {
         .alias => |aliasee| {
             // Guard against invalid aliases
             const idx = @intFromEnum(aliasee);
             if (aliasee == .none or idx >= Walk.decls.items.len) return null;
-            return aliasee.get().get_child(name);
+            return aliasee.get().getChild(name);
         },
         .namespace, .container => |node| {
             const file = decl.file.get();
             const scope = file.scopes.get(node) orelse return null;
-            const child_node = scope.get_child(name) orelse return null;
+            const child_node = scope.getChild(name) orelse return null;
             const result = file.node_decls.get(child_node);
             // Validate the result before returning
             if (result) |r| {
@@ -145,7 +144,10 @@ pub fn get_child(decl: *const Decl, name: []const u8) ?Decl.Index {
         .type_function => {
             // Find a decl with this function as the parent, with a name matching `name`
             for (Walk.decls.items, 0..) |*candidate, i| {
-                if (candidate.parent != .none and candidate.parent.get() == decl and std.mem.eql(u8, candidate.extra_info().name, name)) {
+                if (candidate.parent != .none and
+                    candidate.parent.get() == decl and
+                    std.mem.eql(u8, candidate.extraInfo().name, name))
+                {
                     return @enumFromInt(i);
                 }
             }
@@ -157,9 +159,9 @@ pub fn get_child(decl: *const Decl, name: []const u8) ?Decl.Index {
 }
 
 /// If the type function returns another type function, return the index of that type function.
-pub fn get_type_fn_return_type_fn(decl: *const Decl) ?Decl.Index {
-    if (decl.get_type_fn_return_expr()) |return_expr| {
-        const ast = decl.file.get_ast();
+pub fn getTypeFnReturnTypeFn(decl: *const Decl) ?Decl.Index {
+    if (decl.getTypeFnReturnExpr()) |return_expr| {
+        const ast = decl.file.getAst();
         var buffer: [1]Ast.Node.Index = undefined;
         const call = ast.fullCall(&buffer, return_expr) orelse return null;
         const token = ast.nodeMainToken(call.ast.fn_expr);
@@ -172,10 +174,10 @@ pub fn get_type_fn_return_type_fn(decl: *const Decl) ?Decl.Index {
 }
 
 /// Gets the expression after the `return` keyword in a type function declaration.
-pub fn get_type_fn_return_expr(decl: *const Decl) ?Ast.Node.Index {
+pub fn getTypeFnReturnExpr(decl: *const Decl) ?Ast.Node.Index {
     switch (decl.categorize()) {
         .type_function => {
-            const ast = decl.file.get_ast();
+            const ast = decl.file.getAst();
 
             const body_node = ast.nodeData(decl.ast_node).node_and_node[1];
 
@@ -206,22 +208,22 @@ pub fn lookup(decl: *const Decl, name: []const u8) ?Decl.Index {
 }
 
 /// Appends the fully qualified name to `out`.
-pub fn fqn(decl: *const Decl, out: *std.ArrayListUnmanaged(u8)) Oom!void {
-    try decl.append_path(out);
+pub fn fqn(decl: *const Decl, out: *std.ArrayList(u8)) std.mem.Allocator.Error!void {
+    try decl.appendPath(out);
     if (decl.parent != .none) {
-        try append_parent_ns(out, decl.parent);
-        try out.appendSlice(gpa, decl.extra_info().name);
+        try appendParentNs(out, decl.parent);
+        try out.appendSlice(gpa, decl.extraInfo().name);
     } else {
         out.items.len -= 1; // remove the trailing '.'
     }
 }
 
-pub fn reset_with_path(decl: *const Decl, list: *std.ArrayListUnmanaged(u8)) Oom!void {
+pub fn resetWithPath(decl: *const Decl, list: *std.ArrayList(u8)) std.mem.Allocator.Error!void {
     list.clearRetainingCapacity();
-    try append_path(decl, list);
+    try appendPath(decl, list);
 }
 
-pub fn append_path(decl: *const Decl, list: *std.ArrayListUnmanaged(u8)) Oom!void {
+pub fn appendPath(decl: *const Decl, list: *std.ArrayList(u8)) std.mem.Allocator.Error!void {
     const start = list.items.len;
     // Prefer the module name alias.
     for (Walk.modules.keys(), Walk.modules.values()) |pkg_name, pkg_file| {
@@ -247,12 +249,12 @@ pub fn append_path(decl: *const Decl, list: *std.ArrayListUnmanaged(u8)) Oom!voi
     }
 }
 
-pub fn append_parent_ns(list: *std.ArrayListUnmanaged(u8), parent: Decl.Index) Oom!void {
+pub fn appendParentNs(list: *std.ArrayList(u8), parent: Decl.Index) std.mem.Allocator.Error!void {
     assert(parent != .none);
     const decl = parent.get();
     if (decl.parent != .none) {
-        try append_parent_ns(list, decl.parent);
-        try list.appendSlice(gpa, decl.extra_info().name);
+        try appendParentNs(list, decl.parent);
+        try list.appendSlice(gpa, decl.extraInfo().name);
         try list.append(gpa, '.');
     }
 }
@@ -278,7 +280,7 @@ pub fn find(search_string: []const u8) Decl.Index {
             .alias => |aliasee| current_decl_index = aliasee,
             else => break,
         };
-        current_decl_index = current_decl_index.get().get_child(component) orelse return .none;
+        current_decl_index = current_decl_index.get().getChild(component) orelse return .none;
     }
     return current_decl_index;
 }

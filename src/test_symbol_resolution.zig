@@ -13,7 +13,7 @@ fn setupTest(allocator: std.mem.Allocator) !void {
 
 fn addTestFile(allocator: std.mem.Allocator, name: []const u8, source: []const u8) !Walk.File.Index {
     const owned = try allocator.dupeZ(u8, source);
-    return try Walk.add_file(name, owned);
+    return Walk.addFile(name, owned);
 }
 
 fn resolveHierarchical(allocator: std.mem.Allocator, symbol: []const u8) !?*Decl {
@@ -22,10 +22,10 @@ fn resolveHierarchical(allocator: std.mem.Allocator, symbol: []const u8) !?*Decl
 
     var current_decl: ?*Decl = null;
     for (Walk.decls.items) |*decl| {
-        const info = decl.extra_info();
+        const info = decl.extraInfo();
         if (!info.is_pub) continue;
 
-        var fqn_buf: std.ArrayListUnmanaged(u8) = .empty;
+        var fqn_buf: std.ArrayList(u8) = .empty;
         defer fqn_buf.deinit(allocator);
         try decl.fqn(&fqn_buf);
 
@@ -50,7 +50,7 @@ fn resolveHierarchical(allocator: std.mem.Allocator, symbol: []const u8) !?*Decl
         var found = false;
         for (Walk.decls.items) |*candidate| {
             if (candidate.parent != .none and candidate.parent.get() == search_decl) {
-                const member_info = candidate.extra_info();
+                const member_info = candidate.extraInfo();
                 if (!member_info.is_pub) continue;
                 if (std.mem.eql(u8, member_info.name, part)) {
                     current_decl = candidate;
@@ -82,7 +82,7 @@ test "simple public member resolution" {
 
     const decl = try resolveHierarchical(allocator, "mod.A");
     try testing.expect(decl != null);
-    try testing.expectEqualStrings("A", decl.?.extra_info().name);
+    try testing.expectEqualStrings("A", decl.?.extraInfo().name);
 }
 
 test "nested struct member resolution" {
@@ -106,7 +106,7 @@ test "nested struct member resolution" {
 
     const decl = try resolveHierarchical(allocator, "mod.S.Foo");
     try testing.expect(decl != null);
-    try testing.expectEqualStrings("Foo", decl.?.extra_info().name);
+    try testing.expectEqualStrings("Foo", decl.?.extraInfo().name);
 }
 
 test "alias chain resolution" {
@@ -131,7 +131,7 @@ test "alias chain resolution" {
 
     const decl = try resolveHierarchical(allocator, "mod.X.B");
     try testing.expect(decl != null);
-    try testing.expectEqualStrings("B", decl.?.extra_info().name);
+    try testing.expectEqualStrings("B", decl.?.extraInfo().name);
 }
 
 test "private member not resolved" {
@@ -293,5 +293,5 @@ test "deep alias chain within limit" {
 
     const decl = try resolveHierarchical(allocator, "mod.E.X");
     try testing.expect(decl != null);
-    try testing.expectEqualStrings("X", decl.?.extra_info().name);
+    try testing.expectEqualStrings("X", decl.?.extraInfo().name);
 }
