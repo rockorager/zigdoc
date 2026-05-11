@@ -35,8 +35,8 @@ Commands:
 
 ## Project Initialization
 
-`zigdoc @init` scaffolds a minimal Zig project with `AGENTS.md`
-plus `build.zig` and `build.zig.zon` configured for `ziglint`.
+`zigdoc @init` scaffolds a minimal Zig 0.16 project with `AGENTS.md`,
+`build.zig`, and `build.zig.zon`.
 
 ```bash
 mkdir my-project && cd my-project

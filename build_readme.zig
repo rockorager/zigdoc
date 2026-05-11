@@ -1,10 +1,9 @@
 const std = @import("std");
 
-pub fn main() !void {
-    const allocator = std.heap.page_allocator;
+pub fn main(init: std.process.Init) !void {
+    const allocator = init.gpa;
 
-    const args = try std.process.argsAlloc(allocator);
-    defer std.process.argsFree(allocator, args);
+    const args = try init.minimal.args.toSlice(init.arena.allocator());
 
     if (args.len != 3) {
         std.debug.print("Usage: {s} <help-file> <output-file>\n", .{args[0]});
@@ -14,7 +13,7 @@ pub fn main() !void {
     const help_file = args[1];
     const output_file = args[2];
 
-    const help_content = try std.fs.cwd().readFileAlloc(allocator, help_file, 1024 * 1024);
+    const help_content = try std.Io.Dir.cwd().readFileAlloc(init.io, help_file, allocator, .limited(1024 * 1024));
     defer allocator.free(help_content);
 
     const readme = try std.fmt.allocPrint(allocator,
@@ -35,8 +34,8 @@ pub fn main() !void {
         \\
         \\## Project Initialization
         \\
-        \\`zigdoc @init` scaffolds a minimal Zig project with `AGENTS.md`
-        \\plus `build.zig` and `build.zig.zon` configured for `ziglint`.
+        \\`zigdoc @init` scaffolds a minimal Zig 0.16 project with `AGENTS.md`,
+        \\`build.zig`, and `build.zig.zon`.
         \\
         \\```bash
         \\mkdir my-project && cd my-project
@@ -66,5 +65,5 @@ pub fn main() !void {
     , .{help_content});
     defer allocator.free(readme);
 
-    try std.fs.cwd().writeFile(.{ .sub_path = output_file, .data = readme });
+    try std.Io.Dir.cwd().writeFile(init.io, .{ .sub_path = output_file, .data = readme });
 }
