@@ -115,6 +115,15 @@ pub fn main() !void {
         try collectStepModules(&all_modules, &tls.step, &visited_steps);
     }
 
+    // Materialize generated root source files by executing the steps that
+    // produce them. A step that fails (or whose dependency fails) leaves
+    // its root invisible rather than failing the dump.
+    var make_results = std.AutoHashMap(*std.Build.Step, bool).init(our_allocator);
+    var materialize_iter = all_modules.iterator();
+    while (materialize_iter.next()) |mod_entry| {
+        materializeGeneratedRoots(mod_entry.value_ptr.*, &make_results);
+    }
+
     // Output in JSON format
     try stdout.writeAll("{\n");
     try stdout.writeAll("  \"modules\": {\n");
@@ -125,8 +134,8 @@ pub fn main() !void {
         const import_name = mod_entry.key_ptr.*;
         const module = mod_entry.value_ptr.*;
         const root_source = if (module.root_source_file) |rsf| blk: {
-            // Skip generated files - they don't have a real path yet
-            if (rsf == .generated) break :blk null;
+            // Generated roots are invisible unless their generating step ran
+            if (rsf == .generated and rsf.generated.file.path == null) break :blk null;
             break :blk rsf.getPath2(builder, null);
         } else null;
 
@@ -145,7 +154,7 @@ pub fn main() !void {
                     const dep_name = dep.key_ptr.*;
                     const dep_module = dep.value_ptr.*;
                     const dep_root = if (dep_module.root_source_file) |rsf| blk: {
-                        if (rsf == .generated) break :blk null;
+                        if (rsf == .generated and rsf.generated.file.path == null) break :blk null;
                         break :blk rsf.getPath2(builder, null);
                     } else null;
                     if (dep_root) |droot| {
@@ -167,6 +176,98 @@ pub fn main() !void {
     try stdout.writeAll("}\n");
 }
 
+fn materializeGeneratedRoots(
+    module: *std.Build.Module,
+    results: *std.AutoHashMap(*std.Build.Step, bool),
+) void {
+    if (module.root_source_file) |rsf| {
+        if (rsf == .generated) _ = makeStepGraph(rsf.generated.file.step, results);
+    }
+    var dep_iter = module.import_table.iterator();
+    while (dep_iter.next()) |dep| {
+        const dep_module = dep.value_ptr.*;
+        if (dep_module.root_source_file) |rsf| {
+            if (rsf == .generated) _ = makeStepGraph(rsf.generated.file.step, results);
+        }
+    }
+}
+
+/// Recursively makes `step` and its dependencies so generated files have
+/// real paths when the dump queries them. Results are memoized in `results`;
+/// a failed dependency prevents making the step. Returns whether the step is
+/// safe to query after this call.
+fn makeStepGraph(
+    step: *std.Build.Step,
+    results: *std.AutoHashMap(*std.Build.Step, bool),
+) bool {
+    if (results.get(step)) |made| return made;
+    const made = for (step.dependencies.items) |dep| {
+        if (!makeStepGraph(dep, results)) break false;
+    } else blk: {
+        // No step make() reads thread_pool in this Zig version; the field is
+        // mandatory in MakeOptions but unused.
+        step.make(.{
+            .progress_node = .none,
+            .thread_pool = undefined,
+            .watch = false,
+        }) catch break :blk false;
+        break :blk true;
+    };
+    results.put(step, made) catch return false;
+    return made;
+}
+
+/// If the given `step` is a `std.Build.Step.Compile`, adds any dependencies
+/// for that step which are implied by the module graph rooted at
+/// `step.cast(std.Build.Step.Compile).?.root_module`. Ported from the real
+/// build runner.
+fn createModuleDependenciesForStep(step: *std.Build.Step) std.mem.Allocator.Error!void {
+    const root_module = if (step.cast(std.Build.Step.Compile)) |cs| root: {
+        break :root cs.root_module;
+    } else return; // not a compile step so no module dependencies
+
+    // Starting from `root_module`, discover all modules in this graph.
+    const modules = root_module.getGraph().modules;
+
+    // For each of those modules, set up the implied step dependencies.
+    for (modules) |mod| {
+        if (mod.root_source_file) |lp| lp.addStepDependencies(step);
+        for (mod.include_dirs.items) |include_dir| switch (include_dir) {
+            .path,
+            .path_system,
+            .path_after,
+            .framework_path,
+            .framework_path_system,
+            => |lp| lp.addStepDependencies(step),
+
+            .other_step => |other| {
+                other.getEmittedIncludeTree().addStepDependencies(step);
+                step.dependOn(&other.step);
+            },
+
+            .config_header_step => |other| step.dependOn(&other.step),
+        };
+        for (mod.lib_paths.items) |lp| lp.addStepDependencies(step);
+        for (mod.rpaths.items) |rpath| switch (rpath) {
+            .lazy_path => |lp| lp.addStepDependencies(step),
+            .special => {},
+        };
+        for (mod.link_objects.items) |link_object| switch (link_object) {
+            .static_path,
+            .assembly_file,
+            => |lp| lp.addStepDependencies(step),
+            .other_step => |other| step.dependOn(&other.step),
+            .system_lib => {},
+            .c_source_file => |source| source.file.addStepDependencies(step),
+            .c_source_files => |source_files| source_files.root.addStepDependencies(step),
+            .win32_resource_file => |rc_source| {
+                rc_source.file.addStepDependencies(step);
+                for (rc_source.include_paths) |lp| lp.addStepDependencies(step);
+            },
+        };
+    }
+}
+
 fn collectStepModules(
     modules: *std.StringHashMap(*std.Build.Module),
     step: *std.Build.Step,
@@ -175,6 +276,12 @@ fn collectStepModules(
     // Avoid infinite recursion on circular dependencies
     if (visited.contains(step)) return;
     try visited.put(step, {});
+
+    // The build graph does not record module imports as step dependencies;
+    // the real build runner adds these implied dependencies before running.
+    // We must do the same so generated module roots build before the steps
+    // that use them.
+    try createModuleDependenciesForStep(step);
 
     // Check if this is a compile step
     if (step.cast(std.Build.Step.Compile)) |compile_step| {
