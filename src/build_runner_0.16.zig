@@ -147,11 +147,10 @@ pub fn main(init: process.Init.Minimal) !void {
     while (module_iter.next()) |mod_entry| {
         const import_name = mod_entry.key_ptr.*;
         const module = mod_entry.value_ptr.*;
-        const root_source = if (module.root_source_file) |rsf| blk: {
-            // Generated roots are invisible unless their generating step ran
-            if (rsf == .generated and rsf.generated.file.path == null) break :blk null;
-            break :blk rsf.getPath2(builder, null);
-        } else null;
+        const root_source = if (module.root_source_file) |rsf|
+            rootSourcePath(builder, rsf, &make_results)
+        else
+            null;
 
         if (root_source) |root_path| {
             if (!first_module) try stdout.writer.writeAll(",\n");
@@ -167,10 +166,10 @@ pub fn main(init: process.Init.Minimal) !void {
                 while (dep_iter.next()) |dep| {
                     const dep_name = dep.key_ptr.*;
                     const dep_module = dep.value_ptr.*;
-                    const dep_root = if (dep_module.root_source_file) |rsf| blk: {
-                        if (rsf == .generated and rsf.generated.file.path == null) break :blk null;
-                        break :blk rsf.getPath2(builder, null);
-                    } else null;
+                    const dep_root = if (dep_module.root_source_file) |rsf|
+                        rootSourcePath(builder, rsf, &make_results)
+                    else
+                        null;
                     if (dep_root) |droot| {
                         if (!first_dep) try stdout.writer.writeAll(",\n");
                         first_dep = false;
@@ -207,6 +206,18 @@ fn materializeGeneratedRoots(
             if (rsf == .generated) _ = makeStepGraph(gpa, rsf.generated.file.step, results);
         }
     }
+}
+
+fn rootSourcePath(
+    builder: *std.Build,
+    root_source: std.Build.LazyPath,
+    results: *std.AutoHashMap(*std.Build.Step, bool),
+) ?[]const u8 {
+    if (root_source == .generated) {
+        if (!(results.get(root_source.generated.file.step) orelse false)) return null;
+        if (root_source.generated.file.path == null) return null;
+    }
+    return root_source.getPath2(builder, null);
 }
 
 /// Recursively makes `step` and its dependencies so generated files have

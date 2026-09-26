@@ -114,6 +114,10 @@ pub fn main() !void {
     // Use a separate allocator for our module collection to avoid interfering with build graph
     const our_allocator = std.heap.page_allocator;
 
+    var thread_pool: std.Thread.Pool = undefined;
+    try thread_pool.init(.{ .allocator = our_allocator });
+    defer thread_pool.deinit();
+
     // Buffer output to avoid version-specific writer APIs
     var stdout_buf: std.ArrayList(u8) = .empty;
     const stdout = stdout_buf.writer(arena);
@@ -141,7 +145,7 @@ pub fn main() !void {
     var make_results = std.AutoHashMap(*std.Build.Step, bool).init(our_allocator);
     var materialize_iter = all_modules.iterator();
     while (materialize_iter.next()) |mod_entry| {
-        materializeGeneratedRoots(arena, mod_entry.value_ptr.*, &make_results);
+        materializeGeneratedRoots(arena, mod_entry.value_ptr.*, &thread_pool, &make_results);
     }
 
     // Output in JSON format
@@ -153,11 +157,10 @@ pub fn main() !void {
     while (module_iter.next()) |mod_entry| {
         const import_name = mod_entry.key_ptr.*;
         const module = mod_entry.value_ptr.*;
-        const root_source = if (module.root_source_file) |rsf| blk: {
-            // Generated roots are invisible unless their generating step ran
-            if (rsf == .generated and rsf.generated.file.path == null) break :blk null;
-            break :blk rsf.getPath2(builder, null);
-        } else null;
+        const root_source = if (module.root_source_file) |rsf|
+            rootSourcePath(builder, rsf, &make_results)
+        else
+            null;
 
         if (root_source) |root_path| {
             if (!first_module) try stdout.writeAll(",\n");
@@ -173,10 +176,10 @@ pub fn main() !void {
                 while (dep_iter.next()) |dep| {
                     const dep_name = dep.key_ptr.*;
                     const dep_module = dep.value_ptr.*;
-                    const dep_root = if (dep_module.root_source_file) |rsf| blk: {
-                        if (rsf == .generated and rsf.generated.file.path == null) break :blk null;
-                        break :blk rsf.getPath2(builder, null);
-                    } else null;
+                    const dep_root = if (dep_module.root_source_file) |rsf|
+                        rootSourcePath(builder, rsf, &make_results)
+                    else
+                        null;
                     if (dep_root) |droot| {
                         if (!first_dep) try stdout.writeAll(",\n");
                         first_dep = false;
@@ -209,18 +212,31 @@ pub fn main() !void {
 fn materializeGeneratedRoots(
     gpa: std.mem.Allocator,
     module: *std.Build.Module,
+    thread_pool: *std.Thread.Pool,
     results: *std.AutoHashMap(*std.Build.Step, bool),
 ) void {
     if (module.root_source_file) |rsf| {
-        if (rsf == .generated) _ = makeStepGraph(gpa, rsf.generated.file.step, results);
+        if (rsf == .generated) _ = makeStepGraph(gpa, rsf.generated.file.step, thread_pool, results);
     }
     var dep_iter = module.import_table.iterator();
     while (dep_iter.next()) |dep| {
         const dep_module = dep.value_ptr.*;
         if (dep_module.root_source_file) |rsf| {
-            if (rsf == .generated) _ = makeStepGraph(gpa, rsf.generated.file.step, results);
+            if (rsf == .generated) _ = makeStepGraph(gpa, rsf.generated.file.step, thread_pool, results);
         }
     }
+}
+
+fn rootSourcePath(
+    builder: *std.Build,
+    root_source: std.Build.LazyPath,
+    results: *std.AutoHashMap(*std.Build.Step, bool),
+) ?[]const u8 {
+    if (root_source == .generated) {
+        if (!(results.get(root_source.generated.file.step) orelse false)) return null;
+        if (root_source.generated.file.path == null) return null;
+    }
+    return root_source.getPath2(builder, null);
 }
 
 /// Recursively makes `step` and its dependencies so generated files have
@@ -230,17 +246,16 @@ fn materializeGeneratedRoots(
 fn makeStepGraph(
     gpa: std.mem.Allocator,
     step: *std.Build.Step,
+    thread_pool: *std.Thread.Pool,
     results: *std.AutoHashMap(*std.Build.Step, bool),
 ) bool {
     if (results.get(step)) |made| return made;
     const made = for (step.dependencies.items) |dep| {
-        if (!makeStepGraph(gpa, dep, results)) break false;
+        if (!makeStepGraph(gpa, dep, thread_pool, results)) break false;
     } else blk: {
-        // No step make() reads thread_pool in this Zig version; the field is
-        // mandatory in MakeOptions but unused.
         step.make(.{
             .progress_node = .none,
-            .thread_pool = undefined,
+            .thread_pool = thread_pool,
             .watch = false,
             .web_server = null,
             .gpa = gpa,
